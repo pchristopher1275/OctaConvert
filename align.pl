@@ -6,6 +6,26 @@ my $gVerbose   = 0;
 my $gTempTemplate = "/tmp/align.$$";
 my $gNextTempfile = 0;
 
+sub backtick {
+    my ($command, %opts) = @_;
+    print "$command\n" if $gVerbose;
+    my @lines = `$command`;
+    if ($?) {
+        confess "Failed '$command': $!" unless $opts{noexit};
+        return ();
+    }
+    chomp(@lines);
+    return @lines;
+}
+
+sub run {
+    my ($cmd) = @_;
+    print "$cmd\n" if $gVerbose;
+    if (system $cmd){
+        confess "Failed: '$cmd': $!";
+    }
+}
+
 sub tempFile {
     my $i = $gNextTempfile;
     $gNextTempfile++;
@@ -14,8 +34,7 @@ sub tempFile {
 
 sub soxSilence {
     my ($inputFile, $outputFile) = @_;
-# ../../sox-14.4.2/sox TRACK17_18.WAV x.wav silence 1 0 0.000001
-
+    run("$gSoxPath $inputFile $outputFile silence 1 0 0.000001");
 }
 
 sub soxTrim {
