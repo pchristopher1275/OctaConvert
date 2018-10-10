@@ -1,12 +1,11 @@
 #!/usr/bin/perl
 use strict;
 use Carp;
-my $gSoxPath   = "./sox-14.4.2/sox";
-my $gVerbose   = 0;
-my $gTempTemplate = "/tmp/align.$$";
-my $gNextTempfile = 0;
-my projectDirDir  = "projectInput";
-my outputDir      = "outputLoops";
+use Data::Dumper;
+my $gSoxPath        = "./sox-14.4.2/sox";
+my $gVerbose        = 0;
+my $gTempTemplate   = "/tmp/align.$$";
+my $gNextTempfile   = 0;
 
 my %gTrackMap = (
     "MASTER"     => {sym=>"ms"},
@@ -88,7 +87,7 @@ sub soxStat {
 sub legitProjectName {
     my ($projectPath) = @_;
     my @path = split "/", $projectPath;
-    $projectName      = $path[-1];
+    my $projectName   = $path[-1];
     my ($date, $time) = split "_", $projectName;
     return 0 unless defined($time); 
     return 0 unless $date =~ /^\d\d\d\d\d\d$/;
@@ -111,12 +110,12 @@ sub listProjects {
 ## listTracks picks up all the tracks in a project directory
 sub listTracks {
     my ($projectDir) = @_;
-    my @lines = backtick("ls $projectDir/*.wav");
+    my @lines = backtick("ls $projectDir/*");
     chomp(@lines);
     my @tracks;
     for my $file (@lines) {
-        next unless /TRACK[0-9]{1,2}\.WAV$/i || /MASTER.WAV$/i;
-	push @tracks, $file;
+        next unless $file =~ /TRACK[0-9]{1,2}\.WAV$/i || $file =~ /MASTER.WAV$/i;
+        push @tracks, $file;
     }
     return @tracks;
 }
@@ -153,18 +152,52 @@ sub trackFile2Symbol {
     return $h->{sym};
 }
 
+sub computeNextIndexs {
+    my ($outputDir) = @_;
+    my @files = backtick("ls $outputDir/* 2> /dev/null", noexit=>1);
+    chomp(@files);
+    my %next;
+    for my $file (@files) {
+        next unless $file =~ /\.wav$/i;
+        $file =~ s{[^/]*/}{};
+        my ($symbol, $count) = split '\.', $file;
+        next unless defined($count) && $count =~ /^\d+$/;
+        if (!defined($next{$symbol}) || $count > $next{$symbol}) {
+            $next{$symbol} = $count;
+        } 
+    }
+    return %next;
+}
+
 sub main {
-    my ($projectDir, $bpm, $loopBars) = @ARGV;
+    my ($projectInputDir, $outputDir, $bpm, $loopBars) = @ARGV;
     confess "Failed to specify project dir" unless @ARGV >= 3;
     confess "Bad bpm $bpm" if $bpm < 0 || $bpm > 200;
     confess "Bad loopBars $loopBars" if $loopBars < 0 || $loopBars > 128;
+    confess "Can't find projectInputDir $projectInputDir" unless -d $projectInputDir;
+    confess "Can't find outputDir $outputDir" unless -d $outputDir;
+    $projectInputDir =~ s[/$][];
+    $outputDir       =~ s[/$][];
 
-    
-    my $trimLength = findSilentTrimLength($projectDir);
+    my @tracks     = listTracks($projectInputDir);
+    my %nexts      = computeNextIndexs($outputDir);
+
+    print Dumper(\%nexts),"\n";
+    return;
+
+    my $trimLength = findSilentTrimLength($projectInputDir);
     my $loopLength = (60.0/$bpm) * 4 * $loopBars;    
- 
-     
+
+    for my $track (@tracks) {
+        my $symbol = trackFile2Symbol($track);
+        my $cnt    = 0;
+        if (defined($nexts{$symbol})) {
+            $cnt = $nexts{$symbol};
+            $nexts{$symbol}++;
+        }
+        my $newName = "$outputDir/$symbol.$cnt.wav";
+    }
 }
 
-
+main();
 
