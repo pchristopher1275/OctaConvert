@@ -2,7 +2,7 @@
 use strict;
 use Carp;
 use Data::Dumper;
-my $gSoxPath        = "./sox-14.4.2/sox";
+my $gSoxPath        = "/Users/pete/OctaConvert/sox-14.4.2/sox";
 my $gVerbose        = 0;
 my $gTempTemplate   = "/tmp/align.$$";
 my $gNextTempfile   = 0;
@@ -54,12 +54,12 @@ sub run {
 sub tempFile {
     my $i = $gNextTempfile;
     $gNextTempfile++;
-    return "$gNextTempfile.$i";
+    return "$gTempTemplate.$i.wav";
 }
 
 sub soxSilence {
     my ($inputFile, $outputFile) = @_;
-    run("$gSoxPath $inputFile $outputFile silence 1 0 0.000001");
+    run("$gSoxPath $inputFile $outputFile silence 1 0.01 0.01");
 }
 
 sub soxTrim {
@@ -70,16 +70,25 @@ sub soxTrim {
 sub soxStat {
     my ($inputFile) = @_;
     my $tfile = tempFile();
-    my @lines = backtick("$gSoxPath $inputFile $tfile stat");
+    my @lines = backtick("$gSoxPath $inputFile $tfile stat 2>&1");
     chomp(@lines);
+    my $grabField = sub {
+        my (undef, $value) = split ":", $_[0];
+        $value =~ s/\s//g;
+        return $value;
+    };
+
     my %stat;
     for my $line (@lines) {
         if ($line =~ /Length/) {
-	    my (undef, $length) = split ":", $line;
-	    $length =~ s/\s//g;
-	    $stat{length} = $length;
-	}
+    	    $stat{length} = $grabField->($line);
+    	} elsif ($line =~ /Maximum amplitude/) {
+            $stat{maxAmp} = $grabField->($line);
+        } elsif ($line =~ /Minimum amplitude/) {
+            $stat{minAmp} = $grabField->($line);
+        }
     }
+    run("rm -f $tfile");
     die "Failed to find Length in $inputFile from soxStat" unless defined($stat{length});
     return \%stat;
 }
@@ -129,14 +138,15 @@ sub findSilentTrimLength {
     my @tracks        = listTracks($projectDir);
     confess "No tracks found in $projectDir" unless @tracks;
     my $minSilenceLen = -1;
+    my @returnTracks;
     for my $track (@tracks) {
-    	soxSilence($track, $resultFile);
         my $originalStat = soxStat($track);
-        my $silencedStat = soxStat($track);
+        soxSilence($track, $resultFile);
+        my $silencedStat = soxStat($resultFile);
         my $len          = $originalStat->{length} - $silencedStat->{length};
         if ($minSilenceLen < 0 || $len < $minSilenceLen) {
-	   $minSilenceLen = $len;
-	}
+	        $minSilenceLen = $len;
+	    }
         run("rm -f $resultFile");
     }
     return $minSilenceLen; 
@@ -179,12 +189,10 @@ sub main {
     $projectInputDir =~ s[/$][];
     $outputDir       =~ s[/$][];
 
-    my @tracks     = listTracks($projectInputDir);
-    my %nexts      = computeNextIndexs($outputDir);
-    my $trimLength = findSilentTrimLength($projectInputDir);
-    print ">>> $trimLength\n";
-    return;
-    my $loopLength = (60.0/$bpm) * 4 * $loopBars;    
+    my @tracks            = listTracks($projectInputDir);
+    my %nexts             = computeNextIndexs($outputDir);
+    my $trimLengthSeconds = findSilentTrimLength($projectInputDir);
+    my $loopLengthSeconds = (60.0/$bpm) * 4 * $loopBars;    
 
     for my $track (@tracks) {
         my $symbol = trackFile2Symbol($track);
@@ -192,9 +200,13 @@ sub main {
         if (defined($nexts{$symbol})) {
             $cnt = $nexts{$symbol};
             $nexts{$symbol}++;
+        } else {
+            $nexts{$symbol} = $cnt+1;
         }
         my $newName = "$outputDir/$symbol.$cnt.wav";
-        print "$track --> $newName\n";
+
+        print "$track --> $newName ($trimLengthSeconds) [$loopLengthSeconds]\n";
+        soxTrim($track, $newName, $trimLengthSeconds, $loopLengthSeconds);
     }
 }
 
