@@ -6,7 +6,7 @@ use Carp;
 ##  (b) Either a 24bit or 16bit file which will just be copied over to output.
 
 my $gSoxPath   = "./sox-14.4.2/sox";
-my $gVerbose   = 1;
+my $gVerbose   = 0;
 my $gInputDir  = "input";
 my $gOutputDir = "output";
 sub backtick {
@@ -32,16 +32,26 @@ sub run {
 ## This function only detects 32-bit floating point.
 sub needsConverting {
 	my ($inputPath) = @_;
-	my ($encoding) = grep {/Sample Encoding/} backtick("$gSoxPath --i $inputPath");
+	my $verbose = $gVerbose ? "-V4" : "-V0";
+	my ($encoding) = grep {/Sample Encoding/} backtick("$gSoxPath --i $verbose $inputPath");
 	confess "Failed to find bit depth of file $inputPath" unless defined($encoding);
 	return $encoding =~ /32-bit Floating Point/;
 }
 
+sub flagBadSampleRate {
+	my ($inputPath) = @_;
+	my $verbose = $gVerbose ? "-V4" : "-V0";
+	my ($rate) = grep {/Sample Rate/} backtick("$gSoxPath --i $verbose $inputPath");
+	confess "Failed to find Sample Rate of file $inputPath" unless defined($rate);
+	return $rate !~ /44100/;	
+}
+
+## This method will try and convert any 32-bit floating point file to a 24-bit signed-integer file.
 sub convertFromInputToOutput {
 	my ($inputDir, $outputDir) = @_;
 	my @inPaths = backtick("ls $inputDir/*");
 	@inPaths = grep {/\.wav$/} @inPaths;
-	my $verbose = $gVerbose ? "-V4" : "";
+	my $verbose = $gVerbose ? "-V4" : "-V0";
 	my $cmdPre     = "$gSoxPath $verbose";
 	for my $inPath (@inPaths) {
 		confess "ERROR: Failed to match inPath" unless $inPath =~ m{/([^/]+)$};
@@ -52,6 +62,7 @@ sub convertFromInputToOutput {
 			run $cmd;
 		}
 		else {
+			confess "Discovered bad sample rate in $inPath" if flagBadSampleRate($inPath);
 			run "cp $inPath $outPath";
 		}
 	}
