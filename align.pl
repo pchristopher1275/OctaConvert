@@ -5,6 +5,32 @@ my $gSoxPath   = "./sox-14.4.2/sox";
 my $gVerbose   = 0;
 my $gTempTemplate = "/tmp/align.$$";
 my $gNextTempfile = 0;
+my projectDirDir  = "projectInput";
+my outputDir      = "outputLoops";
+
+my %gTrackMap = (
+    "MASTER"     => {sym=>"ms"},
+    "TRACK1"     => {sym=>"OT"},
+    "TRACK2"     => {sym=>"OT"},
+    "TRACK3"     => {sym=>"OT"},
+    "TRACK4"     => {sym=>"OT"},
+    "TRACK5"     => {sym=>"OT"},
+    "TRACK6"     => {sym=>"OT"},
+    "TRACK7"     => {sym=>"OT"},
+    "TRACK8"     => {sym=>"OT"},
+    "TRACK9"     => {sym=>"OT"},
+    "TRACK10"    => {sym=>"OT"},
+    "TRACK11"    => {sym=>"OT"},
+    "TRACK12"    => {sym=>"OT"},
+    "TRACK13"    => {sym=>"OT"},
+    "TRACK14"    => {sym=>"OT"},
+    "TRACK15"    => {sym=>"OT"},
+    "TRACK16"    => {sym=>"OT"},
+    "TRACK17_18" => {sym=>"OT"},
+    "TRACK19_20" => {sym=>"OT"},
+);
+
+
 
 sub backtick {
     my ($command, %opts) = @_;
@@ -59,13 +85,26 @@ sub soxStat {
     return \%stat;
 }
 
-sub parseProjectName {
-    my ($projectName) = @_;
+sub legitProjectName {
+    my ($projectPath) = @_;
+    my @path = split "/", $projectPath;
+    $projectName      = $path[-1];
+    my ($date, $time) = split "_", $projectName;
+    return 0 unless defined($time); 
+    return 0 unless $date =~ /^\d\d\d\d\d\d$/;
+    return 0 unless $time =~ /^\d\d\d\d\d\d$/;
+    return 1;
 }
 
 ## listProjects returns all the project directories found in the input directory
 sub listProjects {
-   my ($projectDir) = @_;
+   my ($projectDirDir) = @_;
+   my @files = backtick("ls $projectDirDir/*");
+   my @projects;
+   for my $file (@files) {
+	push @projects, $file if legitProjectName($file);
+   }
+   return @projects;
 }
 
 
@@ -104,7 +143,28 @@ sub findSilentTrimLength {
     return $minSilenceLen; 
 }
 
+sub trackFile2Symbol {
+    my ($trackFile) = @_;
+    my @path = split "/", $trackFile;
+    my $track = $path[-1];
+    $track =~ s/\.wav$//;
+    my $h = $gTrackMap{$track};
+    return "un" unless defined($h);
+    return $h->{sym};
+}
 
+sub main {
+    my ($projectDir, $bpm, $loopBars) = @ARGV;
+    confess "Failed to specify project dir" unless @ARGV >= 3;
+    confess "Bad bpm $bpm" if $bpm < 0 || $bpm > 200;
+    confess "Bad loopBars $loopBars" if $loopBars < 0 || $loopBars > 128;
+
+    
+    my $trimLength = findSilentTrimLength($projectDir);
+    my $loopLength = (60.0/$bpm) * 4 * $loopBars;    
+ 
+     
+}
 
 
 
