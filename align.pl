@@ -19,8 +19,8 @@ my %gTrackMap = (
     "TRACK8"     => {sym=>"OT"},
     "TRACK9"     => {sym=>"OT"},
     "TRACK10"    => {sym=>"OT"},
-    "TRACK11"    => {sym=>"OT"},
-    "TRACK12"    => {sym=>"OT"},
+    "TRACK11"    => {sym=>"DN"},
+    "TRACK12"    => {sym=>"DN"},
     "TRACK13"    => {sym=>"OT"},
     "TRACK14"    => {sym=>"OT"},
     "TRACK15"    => {sym=>"OT"},
@@ -146,7 +146,7 @@ sub trackFile2Symbol {
     my ($trackFile) = @_;
     my @path = split "/", $trackFile;
     my $track = $path[-1];
-    $track =~ s/\.wav$//;
+    $track =~ s/\.wav$//i;
     my $h = $gTrackMap{$track};
     return "un" unless defined($h);
     return $h->{sym};
@@ -181,11 +181,9 @@ sub main {
 
     my @tracks     = listTracks($projectInputDir);
     my %nexts      = computeNextIndexs($outputDir);
-
-    print Dumper(\%nexts),"\n";
-    return;
-
     my $trimLength = findSilentTrimLength($projectInputDir);
+    print ">>> $trimLength\n";
+    return;
     my $loopLength = (60.0/$bpm) * 4 * $loopBars;    
 
     for my $track (@tracks) {
@@ -196,6 +194,7 @@ sub main {
             $nexts{$symbol}++;
         }
         my $newName = "$outputDir/$symbol.$cnt.wav";
+        print "$track --> $newName\n";
     }
 }
 
