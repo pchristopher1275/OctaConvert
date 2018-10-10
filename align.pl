@@ -61,25 +61,50 @@ sub soxStat {
 
 sub parseProjectName {
     my ($projectName) = @_;
-
 }
 
 ## listProjects returns all the project directories found in the input directory
 sub listProjects {
+   my ($projectDir) = @_;
 }
 
 
 ## listTracks picks up all the tracks in a project directory
 sub listTracks {
-
+    my ($projectDir) = @_;
+    my @lines = backtick("ls $projectDir/*.wav");
+    chomp(@lines);
+    my @tracks;
+    for my $file (@lines) {
+        next unless /TRACK[0-9]{1,2}\.WAV$/i || /MASTER.WAV$/i;
+	push @tracks, $file;
+    }
+    return @tracks;
 }
 
 ## findSilentTrimLength scans all of the tracks in a project directory and computes the start-point for the loops.
 ## The start point is the longest length (considering all tracks and the master track) that captures ONLY silence 
 ## for all the tracks.
 sub findSilentTrimLength {
-    my ($projectDir) = @_;
-    my $tfile = tempFile();
-     
+    my ($projectDir)  = @_;
+    my $resultFile    = tempFile();
+    my @tracks        = listTracks($projectDir);
+    confess "No tracks found in $projectDir" unless @tracks;
+    my $minSilenceLen = -1;
+    for my $track (@tracks) {
+    	soxSilence($track, $resultFile);
+        my $originalStat = soxStat($track);
+        my $silencedStat = soxStat($track);
+        my $len          = $originalStat->{length} - $silencedStat->{length};
+        if ($minSilenceLen < 0 || $len < $minSilenceLen) {
+	   $minSilenceLen = $len;
+	}
+        run("rm -f $resultFile");
+    }
+    return $minSilenceLen; 
 }
+
+
+
+
 
