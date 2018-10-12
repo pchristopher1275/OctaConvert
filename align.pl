@@ -1,7 +1,21 @@
 #!/usr/bin/perl
+
+##
+## SYNOPSIS:
+##       align [-b <number-of-bars] <projectDirDir> <outputDir> <BPM>
+## OPTIONS:
+##       projectDirDir is the directory where a collection of zoom l-20 projects lives. This directory
+##                     will be scanned for all project directories, and each of those dirs will be
+##                     processed.
+##       outputDir is where the resulting trimed files will end up.
+##       -b count: force the loop length to be count bars. 
+##
+## NOTES:
+
 use strict;
 use Carp;
 use Data::Dumper;
+use Getopt::Std;
 my $gSoxPath        = "/Users/pete/OctaConvert/sox-14.4.2/sox";
 my $gVerbose        = 0;
 my $gTempTemplate   = "/tmp/align.$$";
@@ -95,6 +109,7 @@ sub soxStat {
 
 sub legitProjectName {
     my ($projectPath) = @_;
+    $projectPath =~ s[/$][];
     my @path = split "/", $projectPath;
     my $projectName   = $path[-1];
     my ($date, $time) = split "_", $projectName;
@@ -106,12 +121,13 @@ sub legitProjectName {
 
 ## listProjects returns all the project directories found in the input directory
 sub listProjects {
-   my ($projectDirDir) = @_;
-   my @files = backtick("ls $projectDirDir/*");
-   my @projects;
-   for my $file (@files) {
-	push @projects, $file if legitProjectName($file);
-   }
+    my ($projectDirDir) = @_;
+    my @files = backtick("ls $projectDirDir");
+    my @projects;
+    for my $file (@files) {
+        
+        push @projects, $file if legitProjectName($file);
+    }
    return @projects;
 }
 
@@ -123,7 +139,7 @@ sub listTracks {
     chomp(@lines);
     my @tracks;
     for my $file (@lines) {
-        next unless $file =~ /TRACK[0-9]{1,2}\.WAV$/i || $file =~ /MASTER.WAV$/i;
+        next unless $file =~ /TRACK[0-9]{1,2}(_[0-9]{1,2})?\.WAV$/i || $file =~ /MASTER.WAV$/i;
         push @tracks, $file;
     }
     return @tracks;
@@ -131,25 +147,31 @@ sub listTracks {
 
 ## findSilentTrimLength scans all of the tracks in a project directory and computes the start-point for the loops.
 ## The start point is the longest length (considering all tracks and the master track) that captures ONLY silence 
-## for all the tracks.
+## for all the tracks. The function returns (a) the length of the silence region and (b) the (maximum) length of the
+## rest of the audio. That is, (b) is the maximum (out of all tracks) length of the portion of audio that is
+## after the silenced trim region.
 sub findSilentTrimLength {
     my ($projectDir)  = @_;
     my $resultFile    = tempFile();
     my @tracks        = listTracks($projectDir);
     confess "No tracks found in $projectDir" unless @tracks;
     my $minSilenceLen = -1;
+    my $maxLen        = -1;
     my @returnTracks;
     for my $track (@tracks) {
         my $originalStat = soxStat($track);
         soxSilence($track, $resultFile);
         my $silencedStat = soxStat($resultFile);
-        my $len          = $originalStat->{length} - $silencedStat->{length};
-        if ($minSilenceLen < 0 || $len < $minSilenceLen) {
-	        $minSilenceLen = $len;
+        my $trim         = $originalStat->{length} - $silencedStat->{length};
+        if ($minSilenceLen < 0 || $trim < $minSilenceLen) {
+	        $minSilenceLen = $trim;
 	    }
+        if ($maxLen < 0 || $maxLen < $silencedStat->{length}) {
+            $maxLen = $silencedStat->{length};
+        }
         run("rm -f $resultFile");
     }
-    return $minSilenceLen; 
+    return $minSilenceLen, $maxLen; 
 }
 
 sub trackFile2Symbol {
@@ -172,41 +194,67 @@ sub computeNextIndexs {
         $file =~ s{[^/]*/}{};
         my ($symbol, $count) = split '\.', $file;
         next unless defined($count) && $count =~ /^\d+$/;
-        if (!defined($next{$symbol}) || $count > $next{$symbol}) {
-            $next{$symbol} = $count;
+        if (!defined($next{$symbol}) || $count+1 > $next{$symbol}) {
+            $next{$symbol} = $count+1;
         } 
     }
     return %next;
 }
 
+## findRoundedLengthFromAudioLength returns the length of audioLengthSeconds, rounded down to the nearest bar.
+sub findRoundedLengthFromAudioLength {
+    my ($audioLengthSeconds, $bpm) = @_;
+    my $barLength = (60.0/$bpm) * 4 * 1;
+    my $i = 1;
+    while ($i * $barLength < $audioLengthSeconds) {
+        $i++;
+    }
+    confess "findNumberOfBarsInAudioLength found audio length that is less than a single bar"
+        if $i <= 1;
+    my $numberOfBars = $i-1;
+    return (60.0/$bpm) * 4 * $numberOfBars;
+}
+
 sub main {
-    my ($projectInputDir, $outputDir, $bpm, $loopBars) = @ARGV;
-    confess "Failed to specify project dir" unless @ARGV >= 3;
+    my %opts;
+    getopts("vb:", \%opts);
+    $gVerbose = 1 if $opts{v};
+    my ($projectDirDir, $outputDir, $bpm) = @ARGV;
+    confess "Failed to specify project dir" unless @ARGV >= 2;
     confess "Bad bpm $bpm" if $bpm < 0 || $bpm > 200;
-    confess "Bad loopBars $loopBars" if $loopBars < 0 || $loopBars > 128;
-    confess "Can't find projectInputDir $projectInputDir" unless -d $projectInputDir;
+    confess "Can't find projectDirDir $projectDirDir" unless -d $projectDirDir;
     confess "Can't find outputDir $outputDir" unless -d $outputDir;
-    $projectInputDir =~ s[/$][];
     $outputDir       =~ s[/$][];
 
-    my @tracks            = listTracks($projectInputDir);
-    my %nexts             = computeNextIndexs($outputDir);
-    my $trimLengthSeconds = findSilentTrimLength($projectInputDir);
-    my $loopLengthSeconds = (60.0/$bpm) * 4 * $loopBars;    
+    my @projectInputDirs = listProjects($projectDirDir);
+    confess "Could not find any projects in $projectDirDir" unless @projectInputDirs;
 
-    for my $track (@tracks) {
-        my $symbol = trackFile2Symbol($track);
-        my $cnt    = 0;
-        if (defined($nexts{$symbol})) {
-            $cnt = $nexts{$symbol};
-            $nexts{$symbol}++;
-        } else {
-            $nexts{$symbol} = $cnt+1;
+    my %nexts = computeNextIndexs($outputDir);
+
+    for my $projectInputDir (@projectInputDirs) {
+        $projectInputDir =~ s[/$][];
+        my @tracks            = listTracks($projectInputDir);
+
+        my ($trimLengthSeconds, $audioLengthSeconds) = findSilentTrimLength($projectInputDir);
+        my $loopLengthSeconds = findRoundedLengthFromAudioLength($audioLengthSeconds, $bpm);
+        if ($opts{b}) {
+            confess "Bad argument to -b" unless $opts{b} =~ /^\d+$/;
+            $loopLengthSeconds = (60.0/$bpm) * 4 * $opts{b};
         }
-        my $newName = "$outputDir/$symbol.$cnt.wav";
-
-        print "$track --> $newName ($trimLengthSeconds) [$loopLengthSeconds]\n";
-        soxTrim($track, $newName, $trimLengthSeconds, $loopLengthSeconds);
+        my $loopBars = int($loopLengthSeconds*($bpm / 60.0) / 4);
+        for my $track (@tracks) {
+            my $symbol = trackFile2Symbol($track);
+            my $cnt    = 0;
+            if (defined($nexts{$symbol})) {
+                $cnt = $nexts{$symbol};
+                $nexts{$symbol}++;
+            } else {
+                $nexts{$symbol} = $cnt+1;
+            }
+            my $newName = "$outputDir/$symbol.$cnt.${bpm}_$loopBars.wav";
+            print "$track --> $newName\n";
+            soxTrim($track, $newName, $trimLengthSeconds, $loopLengthSeconds);
+        }
     }
 }
 
