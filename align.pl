@@ -23,23 +23,23 @@ my $gNextTempfile   = 0;
 
 my %gTrackMap = (
     "MASTER"     => {sym=>"ms"},
-    "TRACK1"     => {sym=>"OT"},
-    "TRACK2"     => {sym=>"OT"},
-    "TRACK3"     => {sym=>"OT"},
-    "TRACK4"     => {sym=>"OT"},
-    "TRACK5"     => {sym=>"OT"},
-    "TRACK6"     => {sym=>"OT"},
-    "TRACK7"     => {sym=>"OT"},
-    "TRACK8"     => {sym=>"OT"},
-    "TRACK9"     => {sym=>"OT"},
-    "TRACK10"    => {sym=>"OT"},
-    "TRACK11"    => {sym=>"DN"},
-    "TRACK12"    => {sym=>"DN"},
-    "TRACK13"    => {sym=>"OT"},
-    "TRACK14"    => {sym=>"OT"},
-    "TRACK15"    => {sym=>"OT"},
-    "TRACK16"    => {sym=>"OT"},
-    "TRACK17_18" => {sym=>"OT"},
+    "TRACK01"     => {sym=>"xx01"},
+    "TRACK02"     => {sym=>"un"},
+    "TRACK03"     => {sym=>"DN1"},
+    "TRACK04"     => {sym=>"DN2"},
+    "TRACK05"     => {sym=>"xx05"},
+    "TRACK06"     => {sym=>"xx06"},
+    "TRACK07"     => {sym=>"xx07"},
+    "TRACK08"     => {sym=>"xx08"},
+    "TRACK09"     => {sym=>"xx09"},
+    "TRACK10"    => {sym=>"xx10"},
+    "TRACK11"    => {sym=>"i7"},
+    "TRACK12"    => {sym=>"i7"},
+    "TRACK13"    => {sym=>"i7"},
+    "TRACK14"    => {sym=>"vr"},
+    "TRACK15"    => {sym=>"vr"},
+    "TRACK16"    => {sym=>"vr"},
+    "TRACK17_18" => {sym=>"xx17_18"},
     "TRACK19_20" => {sym=>"OT"},
 );
 
@@ -122,10 +122,10 @@ sub legitProjectName {
 ## listProjects returns all the project directories found in the input directory
 sub listProjects {
     my ($projectDirDir) = @_;
-    my @files = backtick("ls $projectDirDir");
+    $projectDirDir =~ s[/$][];
+    my @files = glob "$projectDirDir/*";
     my @projects;
     for my $file (@files) {
-        
         push @projects, $file if legitProjectName($file);
     }
    return @projects;
@@ -135,8 +135,7 @@ sub listProjects {
 ## listTracks picks up all the tracks in a project directory
 sub listTracks {
     my ($projectDir) = @_;
-    my @lines = backtick("ls $projectDir/*");
-    chomp(@lines);
+    my @lines = glob "$projectDir/*";
     my @tracks;
     for my $file (@lines) {
         next unless $file =~ /TRACK[0-9]{1,2}(_[0-9]{1,2})?\.WAV$/i || $file =~ /MASTER.WAV$/i;
@@ -186,8 +185,7 @@ sub trackFile2Symbol {
 
 sub computeNextIndexs {
     my ($outputDir) = @_;
-    my @files = backtick("ls $outputDir/* 2> /dev/null", noexit=>1);
-    chomp(@files);
+    my @files = glob "$outputDir/*";
     my %next;
     for my $file (@files) {
         next unless $file =~ /\.wav$/i;
@@ -233,6 +231,7 @@ sub main {
 
     for my $projectInputDir (@projectInputDirs) {
         $projectInputDir =~ s[/$][];
+        print "Working on $projectInputDir\n";
         my @tracks            = listTracks($projectInputDir);
 
         my ($trimLengthSeconds, $audioLengthSeconds) = findSilentTrimLength($projectInputDir);
@@ -252,7 +251,7 @@ sub main {
                 $nexts{$symbol} = $cnt+1;
             }
             my $newName = "$outputDir/$symbol.$cnt.${bpm}_$loopBars.wav";
-            print "$track --> $newName\n";
+            printf "Triming %50s --> %s\n", $track, $newName if $gVerbose;
             soxTrim($track, $newName, $trimLengthSeconds, $loopLengthSeconds);
         }
     }
