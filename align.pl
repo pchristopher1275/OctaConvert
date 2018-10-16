@@ -33,12 +33,12 @@ my %gTrackMap = (
     "TRACK08"     => {sym=>"xx08"},
     "TRACK09"     => {sym=>"xx09"},
     "TRACK10"    => {sym=>"xx10"},
-    "TRACK11"    => {sym=>"i7"},
-    "TRACK12"    => {sym=>"i7"},
-    "TRACK13"    => {sym=>"i7"},
-    "TRACK14"    => {sym=>"vr"},
-    "TRACK15"    => {sym=>"vr"},
-    "TRACK16"    => {sym=>"vr"},
+    "TRACK11"    => {sym=>"in1"},
+    "TRACK12"    => {sym=>"in2"},
+    "TRACK13"    => {sym=>"in3"},
+    "TRACK14"    => {sym=>"vr1"},
+    "TRACK15"    => {sym=>"vr2"},
+    "TRACK16"    => {sym=>"vr3"},
     "TRACK17_18" => {sym=>"xx17_18"},
     "TRACK19_20" => {sym=>"OT"},
 );
@@ -199,17 +199,20 @@ sub computeNextIndexs {
     return %next;
 }
 
-## findRoundedLengthFromAudioLength returns the length of audioLengthSeconds, rounded down to the nearest bar.
+## findRoundedLengthFromAudioLength returns the length of audioLengthSeconds, rounded down to the nearest 2-bars.
+## NOTE: I think that the zoom is adding some silence at the end of it's recordings. Given that, it makes it easy
+## to accidentally create a 5 bar loop rather than a 4-bar loop. Since I'm most interested in loops of length
+## 2,4, and 8. I'm just going to round to the nearest 2-bars.
 sub findRoundedLengthFromAudioLength {
     my ($audioLengthSeconds, $bpm) = @_;
     my $barLength = (60.0/$bpm) * 4 * 1;
-    my $i = 1;
+    my $i = 2;
     while ($i * $barLength < $audioLengthSeconds) {
-        $i++;
+        $i+=2;
     }
     confess "findNumberOfBarsInAudioLength found audio length that is less than a single bar"
-        if $i <= 1;
-    my $numberOfBars = $i-1;
+        if $i <= 2;
+    my $numberOfBars = $i-2;
     return (60.0/$bpm) * 4 * $numberOfBars;
 }
 
