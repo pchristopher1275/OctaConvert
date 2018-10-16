@@ -2,13 +2,13 @@
 
 ##
 ## SYNOPSIS:
-##       align [-b <number-of-bars] <projectDirDir> <outputDir> <BPM>
+##       align [-b <number-of-bars>] <projectDirDir> <outputDir> <BPM>
 ## OPTIONS:
 ##       projectDirDir is the directory where a collection of zoom l-20 projects lives. This directory
 ##                     will be scanned for all project directories, and each of those dirs will be
 ##                     processed.
 ##       outputDir is where the resulting trimed files will end up.
-##       -b count: force the loop length to be count bars. 
+##       -b count: take each track and cut it into as many count bar loops as possible. 
 ##
 ## NOTES:
 
@@ -221,12 +221,15 @@ sub main {
     getopts("vb:", \%opts);
     $gVerbose = 1 if $opts{v};
     my ($projectDirDir, $outputDir, $bpm) = @ARGV;
-    confess "Failed to specify project dir" unless @ARGV >= 2;
-    confess "Bad bpm $bpm" if $bpm < 0 || $bpm > 200;
-    confess "Can't find projectDirDir $projectDirDir" unless -d $projectDirDir;
-    confess "Can't find outputDir $outputDir" unless -d $outputDir;
-    $outputDir       =~ s[/$][];
+    $outputDir     =~ s[/$][];
+    $projectDirDir =~ s[/$][];
 
+    confess "Not enough arguments" unless @ARGV >= 2;
+    confess "Bad bpm $bpm" unless $bpm =~ /^\d+$/ && $bpm >= 30 && $bpm <= 200;
+    confess "Can't find projectDirDir $projectDirDir" unless -d $projectDirDir;
+    confess "Can't create $outputDir: file present" if ( (-e $outputDir) && !(-d $outputDir) );
+    run "mkdir $outputDir" unless -d $outputDir;
+    
     my @projectInputDirs = listProjects($projectDirDir);
     confess "Could not find any projects in $projectDirDir" unless @projectInputDirs;
 
@@ -236,26 +239,32 @@ sub main {
         $projectInputDir =~ s[/$][];
         print "Working on $projectInputDir\n";
         my @tracks            = listTracks($projectInputDir);
-
         my ($trimLengthSeconds, $audioLengthSeconds) = findSilentTrimLength($projectInputDir);
-        my $loopLengthSeconds = findRoundedLengthFromAudioLength($audioLengthSeconds, $bpm);
+        my $totalRoundedLengthSeconds = findRoundedLengthFromAudioLength($audioLengthSeconds, $bpm);
+        my $loopLengthSeconds         = $totalRoundedLengthSeconds;
+        my $nLoops                    = 1;
         if ($opts{b}) {
             confess "Bad argument to -b" unless $opts{b} =~ /^\d+$/;
             $loopLengthSeconds = (60.0/$bpm) * 4 * $opts{b};
+            $nLoops            = int($totalRoundedLengthSeconds / $loopLengthSeconds);
         }
         my $loopBars = int($loopLengthSeconds*($bpm / 60.0) / 4);
-        for my $track (@tracks) {
-            my $symbol = trackFile2Symbol($track);
-            my $cnt    = 0;
-            if (defined($nexts{$symbol})) {
-                $cnt = $nexts{$symbol};
-                $nexts{$symbol}++;
-            } else {
-                $nexts{$symbol} = $cnt+1;
+        my $loopStartSeconds = $trimLengthSeconds;
+        for (my $loop = 0; $loop < $nLoops; $loop++) {
+            for my $track (@tracks) {
+                my $symbol = trackFile2Symbol($track);
+                my $cnt    = 0;
+                if (defined($nexts{$symbol})) {
+                    $cnt = $nexts{$symbol};
+                    $nexts{$symbol}++;
+                } else {
+                    $nexts{$symbol} = $cnt+1;
+                }
+                my $newName = "$outputDir/$symbol.$cnt.${bpm}_$loopBars.wav";
+                printf "Triming %50s [loop #%-2d]--> %s\n", $track, $loop, $newName;# if $gVerbose;
+                soxTrim($track, $newName, $loopStartSeconds, $loopLengthSeconds);
             }
-            my $newName = "$outputDir/$symbol.$cnt.${bpm}_$loopBars.wav";
-            printf "Triming %50s --> %s\n", $track, $newName if $gVerbose;
-            soxTrim($track, $newName, $trimLengthSeconds, $loopLengthSeconds);
+            $loopStartSeconds += $loopLengthSeconds;
         }
     }
 }
