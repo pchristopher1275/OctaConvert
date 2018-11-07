@@ -23,8 +23,8 @@ my $gNextTempfile   = 0;
 
 my %gTrackMap = (
     "MASTER"     => {sym=>"ms"},
-    "TRACK01"     => {sym=>"xx01"},
-    "TRACK02"     => {sym=>"un"},
+    "TRACK01"     => {sym=>"vox"},
+    "TRACK02"     => {sym=>"xx02"},
     "TRACK03"     => {sym=>"DN1"},
     "TRACK04"     => {sym=>"DN2"},
     "TRACK05"     => {sym=>"xx05"},
